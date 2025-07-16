@@ -394,6 +394,8 @@ class EngineArgs:
         str] = ModelConfig.logits_processor_pattern
 
     speculative_config: Optional[Dict[str, Any]] = None
+    draft_tensor_parallel_size: Optional[int] = None
+    no_auto_speculative: bool = False
 
     show_hidden_metrics_for_version: Optional[str] = \
         ObservabilityConfig.show_hidden_metrics_for_version
@@ -767,6 +769,18 @@ class EngineArgs:
             default=None,
             help="The configurations for speculative decoding. Should be a "
             "JSON string.")
+        speculative_group.add_argument(
+            "--draft-tensor-parallel-size",
+            type=int,
+            default=None,
+            help="Number of tensor parallel replicas for the draft model. "
+            "Only used with speculative decoding.")
+        speculative_group.add_argument(
+            "--no-auto-speculative",
+            action="store_true",
+            default=False,
+            help="Disable automatic detection of speculators format models "
+            "for speculative decoding.")
 
         # Observability arguments
         observability_kwargs = get_kwargs(ObservabilityConfig)
@@ -874,6 +888,43 @@ class EngineArgs:
 
     @classmethod
     def from_cli_args(cls, args: argparse.Namespace):
+        # Auto-detect speculators format models
+        if (args.model and not args.speculative_config and 
+            not getattr(args, 'no_auto_speculative', False)):
+            from vllm.transformers_utils.configs import extract_speculators_info
+            from vllm.logger import init_logger
+            logger = init_logger(__name__)
+            
+            speculators_info = extract_speculators_info(args.model)
+            if speculators_info:
+                # Log what we're doing
+                logger.info("🦅 Auto-detected Eagle speculators format model")
+                logger.info(f"  Target model: {speculators_info['target_model']}")
+                logger.info(f"  Draft model: {args.model}")
+                logger.info(f"  Method: {speculators_info['method']}")
+                logger.info(f"  Speculative tokens: {speculators_info['num_tokens']}")
+                
+                # Build speculative config
+                spec_config = {
+                    "method": speculators_info["method"],
+                    "model": args.model,  # Original model becomes draft
+                    "num_speculative_tokens": speculators_info["num_tokens"],
+                }
+                
+                # Add draft tensor parallel size if specified
+                if hasattr(args, 'draft_tensor_parallel_size') and args.draft_tensor_parallel_size is not None:
+                    spec_config["draft_tensor_parallel_size"] = args.draft_tensor_parallel_size
+                
+                # Set the speculative config directly (it's already parsed by argparse)
+                args.speculative_config = spec_config
+                
+                # Swap the model to target
+                args.model = speculators_info["target_model"]
+                
+                # Also update tokenizer if not explicitly set
+                if not hasattr(args, 'tokenizer') or args.tokenizer is None:
+                    args.tokenizer = speculators_info["target_model"]
+        
         # Get the list of attributes of this dataclass.
         attrs = [attr.name for attr in dataclasses.fields(cls)]
         # Set the attributes from the parsed arguments.

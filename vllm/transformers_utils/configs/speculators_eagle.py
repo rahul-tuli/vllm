@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import os
-from typing import Any, Union
+from typing import Any, Optional, Union
 
 from transformers import PretrainedConfig
 
@@ -282,3 +282,59 @@ def is_speculators_eagle_config(config_path: Union[str, os.PathLike]) -> bool:
         return model_type in SUPPORTED_SPECULATORS_TYPES
     except Exception:
         return False
+
+
+def extract_speculators_info(model_path: Union[str, os.PathLike]) -> Optional[dict[str, Any]]:
+    """
+    Extract target model and config from speculators format model.
+    
+    Returns dict with:
+    - target_model: str - The target model name/path
+    - method: str - The speculative method (eagle/eagle3)
+    - num_tokens: int - Number of speculative tokens
+    
+    Returns None if not speculators format or missing target model.
+    """
+    try:
+        # Check if it's speculators format
+        if not is_speculators_eagle_config(model_path):
+            return None
+            
+        # Load the config
+        config_dict, _ = PretrainedConfig.get_config_dict(model_path)
+        
+        # Extract method
+        method = config_dict.get("speculators_model_type", "eagle")
+        
+        # Extract num tokens
+        num_tokens = DEFAULT_NUM_LOOKAHEAD_TOKENS  # default
+        speculators_cfg = config_dict.get("speculators_config", {})
+        proposal_methods = speculators_cfg.get("proposal_methods", [])
+        if proposal_methods:
+            num_tokens = proposal_methods[0].get("speculative_tokens", DEFAULT_NUM_LOOKAHEAD_TOKENS)
+        
+        # Extract target model - try multiple possible locations
+        target_model = None
+        
+        # Try target_config.model_name (original format)
+        target_config = speculators_cfg.get("target_config", {})
+        target_model = target_config.get("model_name")
+        
+        # Try verifier.name_or_path (new format)
+        if not target_model:
+            verifier_config = speculators_cfg.get("verifier", {})
+            target_model = verifier_config.get("name_or_path")
+        
+        # If no target model in config, return None
+        # This will require user to specify target model explicitly
+        if not target_model:
+            return None
+            
+        return {
+            "target_model": target_model,
+            "method": method,
+            "num_tokens": num_tokens
+        }
+    except Exception:
+        # If any error occurs, treat as not speculators format
+        return None
