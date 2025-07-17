@@ -395,7 +395,6 @@ class EngineArgs:
 
     speculative_config: Optional[Dict[str, Any]] = None
     draft_tensor_parallel_size: Optional[int] = None
-    no_auto_speculative: bool = False
 
     show_hidden_metrics_for_version: Optional[str] = \
         ObservabilityConfig.show_hidden_metrics_for_version
@@ -774,13 +773,8 @@ class EngineArgs:
             type=int,
             default=None,
             help="Number of tensor parallel replicas for the draft model. "
-            "Only used with speculative decoding.")
-        speculative_group.add_argument(
-            "--no-auto-speculative",
-            action="store_true",
-            default=False,
-            help="Disable automatic detection of speculators format models "
-            "for speculative decoding.")
+            "Only used with speculative decoding. "
+            "Note: draft_tensor_parallel_size > 1 is not supported at the moment.")
 
         # Observability arguments
         observability_kwargs = get_kwargs(ObservabilityConfig)
@@ -889,8 +883,7 @@ class EngineArgs:
     @classmethod
     def from_cli_args(cls, args: argparse.Namespace):
         # Auto-detect speculators format models
-        if (args.model and not args.speculative_config and 
-            not getattr(args, 'no_auto_speculative', False)):
+        if args.model and not args.speculative_config:
             from vllm.transformers_utils.configs import extract_speculators_info
             from vllm.logger import init_logger
             logger = init_logger(__name__)
