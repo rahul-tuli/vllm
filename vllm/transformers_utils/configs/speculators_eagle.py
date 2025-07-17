@@ -335,6 +335,10 @@ def extract_speculators_info(model_path: Union[str, os.PathLike]) -> Optional[di
             "method": method,
             "num_tokens": num_tokens
         }
-    except Exception:
-        # If any error occurs, treat as not speculators format
+    except Exception as e:
+        from vllm.logger import init_logger
+        logger = init_logger(__name__)
+        logger.debug("Failed to extract speculators info from %s.",
+                     model_path,
+                     exc_info=e)
         return None
