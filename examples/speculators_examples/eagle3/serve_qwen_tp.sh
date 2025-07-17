@@ -1,1 +1,0 @@
-VLLM_USE_V1=1 vllm serve nm-testing/Speculator-Qwen3-8B-Eagle3-converted-0717 --draft_tensor_parallel_size=2 >output_speculators_qwen.txt
